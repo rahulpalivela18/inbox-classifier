@@ -5,26 +5,63 @@ application database. The app stores Gmail IDs, sender metadata, classifications
 confidence scores, scan state, and aggregate statistics—not email bodies, HTML,
 attachments, or OAuth tokens.
 
-## Current build
+## Current status
 
-The first working build includes:
+This repository is a **Phase 1 foundation and working demo**. The UI, API
+contracts, database shape, and demo scan flow are started, but live Gmail
+connection and live AI classification still need to be completed.
+
+The intended Phase 1 goal is only:
+
+```text
+Connect Gmail
+    ↓
+Fetch Gmail messages
+    ↓
+Classify messages with TypeSafe AI
+    ↓
+Store classification metadata
+    ↓
+Show results in the dashboard
+```
+
+### Done
 
 - Responsive dashboard with inbox aggregates and category signal map
 - Review queue with sender search, category filtering, inclusion toggles, and
   editable classifications
-- Background scan progress with persistent scan route
-- Gmail label application preview flow
-- Settings page with connection state and privacy boundary explanation
+- Background scan progress UI and demo scan worker
+- Gmail label application API/UI flow in demo mode
+- Settings page with connection state and privacy explanation
 - PostgreSQL schema for users, categories, classifications, scan jobs, and
   unsubscribe actions
-- Generated OpenAPI client hooks shared between the frontend and API
-- Explicit demo mode for local development, with no fake data used once live mode
-  is enabled
+- OpenAPI contract, generated React Query hooks, and Zod validation
+- Explicit demo mode so the interface can run without Gmail credentials
+- Setup notes for Google Cloud OAuth, TypeSafe configuration, and PostgreSQL
 
-Live Gmail fetching and TypeSafe classification are kept behind configuration
-boundaries for the next implementation pass. The server modules and API contract
-are intentionally separated so those integrations can be added without moving
-email content into PostgreSQL.
+### Not done yet for Phase 1
+
+1. Complete the Google OAuth callback in
+   `artifacts/api-server/src/routes/inbox.ts`.
+2. Add a backend-only Gmail service that exchanges OAuth codes, refreshes
+   expired tokens, paginates Gmail message IDs, and retrieves only the minimum
+   sender/subject/timestamp/text data needed for classification.
+3. Add a dedicated TypeSafe classifier service that sends cleaned and truncated
+   content in memory, validates `{ category, subcategory, confidence }`, and
+   retries individual failures without stopping the scan.
+4. Move demo scan/classification state from
+   `artifacts/api-server/src/lib/inbox-state.ts` into PostgreSQL.
+5. Replace demo dashboard counts with values calculated from real stored
+   metadata and Gmail metadata.
+
+Until those items are complete, keep:
+
+```env
+INBOX_CLASSIFIER_DEMO_MODE=true
+```
+
+Do not claim live Gmail classification is working just because the demo UI is
+working.
 
 ## Run locally
 
@@ -45,7 +82,7 @@ email content into PostgreSQL.
 The managed Replit workflows start both services automatically. Run
 `pnpm run typecheck` for the full workspace check.
 
-## Google Cloud OAuth setup
+## Google Cloud OAuth setup for Phase 1
 
 1. Create or select a Google Cloud project.
 2. Enable the Gmail API.
@@ -60,13 +97,13 @@ The managed Replit workflows start both services automatically. Run
    domain and `/api/account/callback` path.
 7. Set `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`, and `GOOGLE_REDIRECT_URI` in
    server-side environment variables.
-8. Set `INBOX_CLASSIFIER_DEMO_MODE=false` only after the live callback and Gmail
-   service are configured.
+8. Set `INBOX_CLASSIFIER_DEMO_MODE=false` only after the live callback, Gmail
+   service, token refresh, and one-message classification flow are verified.
 
 OAuth access tokens must stay on the backend. Do not put them in React state,
 browser storage, logs, or API responses.
 
-## TypeSafe classifier configuration
+## TypeSafe classifier configuration for Phase 1
 
 Set:
 
@@ -109,20 +146,28 @@ full-content column.
 - `lib/api-client-react/src/generated` — generated frontend hooks
 - `lib/api-zod/src/generated` — generated request/response validation
 
+## Phase 2 — later features
+
+Phase 2 is intentionally outside the current Phase 1 scope:
+
+- Classification review backed by real Gmail data
+- Creating and applying real Gmail label hierarchies
+- Sender statistics and newsletter detection
+- `List-Unsubscribe` detection and explicit user confirmation
+- Playwright unsubscribe fallback
+- Manual/failed unsubscribe states
+- No CAPTCHA bypass, authentication bypass, or arbitrary browser actions
+
+Playwright scraping/unsubscribe automation should not be implemented before the
+basic Gmail connection and classification loop works reliably.
+
 ## Known limitations
 
-- The preview uses explicit demo mode so the product can be inspected without
-  Gmail credentials.
-- Live Gmail fetch, token refresh, structured TypeSafe calls, and durable
-  background workers are the next integration pass.
-- Unsubscribe automation is intentionally not enabled. When implemented, it must
-  require explicit confirmation, prefer `List-Unsubscribe`, and never bypass
-  CAPTCHA or authentication.
-
-## Next steps
-
-1. Add the backend Gmail OAuth callback and encrypted/token-safe session storage.
-2. Implement the modular Gmail, TypeSafe classifier, and Gmail label services.
-3. Move scan state and classification mutations from demo memory to PostgreSQL.
-4. Add retry/backoff and Gmail pagination handling for thousands of messages.
-5. Add the confirmed unsubscribe flow behind a feature flag.
+- The preview uses explicit demo mode and does not read a real Gmail account.
+- The OAuth start route exists, but the callback, token exchange, refresh, and
+  Gmail API service still need implementation.
+- The TypeSafe environment variables are documented, but no live classifier
+  request is wired yet.
+- Demo scan state is held in server memory until the Phase 1 persistence work is
+  completed.
+- Gmail labels and unsubscribe actions are not performed against a real account.
