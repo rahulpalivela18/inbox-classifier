@@ -70,17 +70,16 @@ working.
 3. Start the API:
 
    ```bash
-   pnpm --filter @workspace/api-server run dev
+   npm run dev --workspace @workspace/api-server
    ```
 
 4. Start the web app in a second process:
 
    ```bash
-   pnpm --filter @workspace/inbox-classifier run dev
+   npm run dev --workspace @workspace/inbox-classifier
    ```
 
-The managed Replit workflows start both services automatically. Run
-`pnpm run typecheck` for the full workspace check.
+Run `npm run typecheck` for the full workspace check.
 
 ## Google Cloud OAuth setup for Phase 1
 
@@ -93,7 +92,7 @@ The managed Replit workflows start both services automatically. Run
 4. Create a Web application OAuth client.
 5. Add the local redirect URI:
    `http://localhost:5000/api/account/callback`
-6. Add the Replit preview callback URI that matches the API service's public
+6. Add the production callback URI that matches the API service's public
    domain and `/api/account/callback` path.
 7. Set `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`, and `GOOGLE_REDIRECT_URI` in
    server-side environment variables.
@@ -130,7 +129,7 @@ bounded policy, and reflected in scan progress rather than stopping the scan.
 The schema is managed by Drizzle. Push development changes with:
 
 ```bash
-pnpm --filter @workspace/db run push
+npm run push --workspace @workspace/db
 ```
 
 The metadata tables intentionally do not contain a body, HTML, attachment, or
