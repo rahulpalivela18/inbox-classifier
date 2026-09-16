@@ -1,0 +1,1 @@
+- [Generated client DOM iterable](generated-client-dom-iterable.md) — generated browser clients using `Headers.entries()` need `dom.iterable` in TypeScript libs.

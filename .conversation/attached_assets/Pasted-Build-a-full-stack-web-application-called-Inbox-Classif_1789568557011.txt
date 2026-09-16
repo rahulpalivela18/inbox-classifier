@@ -1,0 +1,694 @@
+Build a full-stack web application called **Inbox Classifier**.
+
+The goal is to connect a user's Gmail account, analyze their emails using an AI classifier (TypeSafe AI), categorize them into user-defined categories, and then organize those emails inside Gmail using Gmail labels.
+
+The application should be privacy-conscious: **do not store email bodies or full email content in our database.** Store only Gmail IDs, classification metadata, aggregate statistics, and application state.
+
+## 1. Tech Stack
+
+### Frontend
+
+* React + TypeScript
+* Modern responsive UI
+* Tailwind CSS
+* Clean dashboard-style interface
+* Use a component library if useful, but keep the UI simple and polished
+
+### Backend
+
+* Python
+* FastAPI
+* Gmail API
+* Google OAuth 2.0
+* TypeSafe AI API for classification
+* Playwright for unsubscribe automation as a later/fallback feature
+* PostgreSQL for persistent application data
+
+Keep the backend modular so the Gmail integration, classifier, database, and unsubscribe system are separate services/modules.
+
+Do NOT introduce unnecessary microservices.
+
+---
+
+# 2. Main User Flow
+
+The initial landing page should explain:
+
+**"Organize your Gmail with AI."**
+
+Short explanation:
+
+> Connect Gmail, let AI understand your inbox, and automatically organize your emails into useful categories and labels.
+
+Primary button:
+
+**Connect Gmail**
+
+After Google OAuth:
+
+```text
+Google OAuth
+    ↓
+Gmail permissions
+    ↓
+Dashboard
+```
+
+---
+
+# 3. Gmail OAuth
+
+Implement Google OAuth securely.
+
+Request only the Gmail permissions actually required for the application.
+
+The application needs to:
+
+* Read emails
+* Read message metadata
+* Create/manage Gmail labels
+* Apply labels to emails
+* Eventually support unsubscribe actions
+
+Do not expose OAuth tokens to the frontend.
+
+Keep secrets/API credentials in environment variables.
+
+Create clear configuration documentation explaining which Google Cloud credentials/environment variables are required.
+
+For local development, support localhost OAuth redirect URLs.
+
+---
+
+# 4. Dashboard
+
+After connecting Gmail, show a dashboard.
+
+Example:
+
+```text
+------------------------------------------------
+Inbox Classifier
+
+Connected to:
+user@gmail.com
+
+[ Scan Inbox ]
+
+------------------------------------------------
+
+Inbox overview
+
+4,821 emails
+1,284 unread
+23 recurring senders
+
+Categories
+
+Work             1,204
+Finance            384
+Shopping           612
+Newsletter       1,743
+Personal           511
+Other              367
+------------------------------------------------
+```
+
+These numbers are examples only. Use real data.
+
+The dashboard should eventually support charts/visual summaries, but don't overcomplicate the first version.
+
+---
+
+# 5. Classification
+
+When the user clicks:
+
+**Scan Inbox**
+
+the backend should:
+
+1. Fetch Gmail messages using the Gmail API.
+2. Retrieve the minimum necessary information required for classification.
+3. Extract:
+
+   * Gmail message ID
+   * Gmail thread ID
+   * sender
+   * sender email/domain
+   * subject
+   * relevant email text
+   * timestamp
+4. Send appropriate cleaned/truncated content to TypeSafe AI.
+5. Receive structured classification output.
+6. Store classification metadata.
+7. Never store the actual email body in PostgreSQL.
+
+The classifier should initially use these categories:
+
+```text
+WORK
+FINANCE
+SHOPPING
+NEWSLETTER
+TRAVEL
+PERSONAL
+PROMOTION
+OTHER
+```
+
+Make the categories configurable so they can later be changed from the UI.
+
+---
+
+# 6. TypeSafe Classification
+
+Create a dedicated classifier module.
+
+Do not scatter TypeSafe API calls throughout the application.
+
+Create something like:
+
+```text
+backend/
+    services/
+        gmail_service.py
+        classifier_service.py
+        label_service.py
+        unsubscribe_service.py
+```
+
+The classifier should return structured data similar to:
+
+```json
+{
+  "category": "NEWSLETTER",
+  "subcategory": "TECH",
+  "confidence": 0.94
+}
+```
+
+The backend should validate the returned structure before saving it.
+
+If classification fails, retry appropriately and mark the message as failed rather than crashing the entire scan.
+
+---
+
+# 7. Batch Processing
+
+The application needs to handle thousands of emails.
+
+Do NOT process thousands of emails in a single blocking HTTP request.
+
+Create a background processing mechanism.
+
+Initial flow:
+
+```text
+User clicks Scan
+        ↓
+Create scan job
+        ↓
+Background worker
+        ↓
+Fetch Gmail messages in batches
+        ↓
+Classify
+        ↓
+Store metadata
+        ↓
+Update progress
+        ↓
+Dashboard
+```
+
+The frontend should show progress:
+
+```text
+Scanning inbox...
+
+1,842 / 4,821 emails processed
+
+████████████░░░░░░░░ 38%
+
+Current:
+Classifying emails...
+```
+
+The user should be able to leave the page and return later to see the scan status.
+
+Keep the implementation simple enough for Replit.
+
+---
+
+# 8. Database
+
+Use PostgreSQL.
+
+The database is intentionally small because **we do NOT store email content**.
+
+Suggested tables:
+
+### users
+
+```text
+id
+google_user_id
+email
+created_at
+updated_at
+```
+
+### email_classifications
+
+```text
+id
+user_id
+gmail_message_id
+gmail_thread_id
+sender_email
+sender_domain
+category
+subcategory
+confidence
+classified_at
+```
+
+Do not store:
+
+* email body
+* attachments
+* full email HTML
+* unnecessary personal content
+
+### scan_jobs
+
+```text
+id
+user_id
+status
+total_messages
+processed_messages
+failed_messages
+started_at
+completed_at
+```
+
+### unsubscribe_actions
+
+```text
+id
+user_id
+sender_email
+sender_domain
+status
+method
+created_at
+completed_at
+```
+
+Possible statuses:
+
+```text
+PENDING
+SUCCESS
+FAILED
+SKIPPED
+```
+
+Possible methods:
+
+```text
+LIST_UNSUBSCRIBE
+PLAYWRIGHT
+MANUAL
+```
+
+### categories
+
+Allow configurable categories eventually:
+
+```text
+id
+user_id
+name
+description
+created_at
+```
+
+For the MVP, seed the default categories.
+
+---
+
+# 9. Gmail Labels
+
+After classification, provide a preview before modifying Gmail.
+
+Example:
+
+```text
+AI Classification Complete
+
+4,821 emails analyzed
+
+Work          1,204
+Finance         384
+Shopping        612
+Newsletter    1,743
+Personal        511
+Other           367
+
+[ Review ]
+
+[ Apply to Gmail ]
+```
+
+When the user clicks Apply:
+
+Create a Gmail label hierarchy:
+
+```text
+Inbox Classifier/
+    Work
+    Finance
+    Shopping
+    Newsletter
+    Travel
+    Personal
+    Promotion
+    Other
+```
+
+Use Gmail's label API.
+
+Then apply the corresponding label to each classified email.
+
+Do NOT delete emails automatically.
+
+Do NOT archive emails automatically in the MVP.
+
+The user should be able to go back into Gmail and manage/delete the emails themselves.
+
+Make the operation as reversible as reasonably possible.
+
+---
+
+# 10. Review Interface
+
+Before applying labels, allow the user to inspect classifications.
+
+Example:
+
+```text
+Newsletter
+
+843 emails
+
+Sender                         Count
+
+Medium                         43
+LinkedIn                       27
+Substack                       19
+TechCrunch                     17
+...
+
+[ Change category ]
+[ Exclude sender ]
+```
+
+Allow users to change a classification before applying Gmail labels.
+
+Do not display unnecessary email content.
+
+When displaying an email for review, fetch the minimum required information from Gmail rather than storing the content.
+
+---
+
+# 11. Statistics
+
+Show useful aggregate statistics.
+
+Examples:
+
+```text
+Total emails scanned
+Emails by category
+Emails by sender
+Unread emails
+Emails by month
+Number of recurring senders
+Classification confidence
+Number of labels applied
+Number of unsubscribe actions
+```
+
+These should be generated from stored metadata/Gmail metadata where possible.
+
+Do not create a huge analytics system.
+
+---
+
+# 12. Unsubscribe Feature
+
+Implement this as a separate feature/module and make it initially optional.
+
+The eventual flow:
+
+```text
+Identify recurring promotional/newsletter senders
+            ↓
+Check email unsubscribe information
+            ↓
+If List-Unsubscribe exists
+            ↓
+Show user:
+"Unsubscribe from Medium?"
+            ↓
+User confirms
+            ↓
+Perform unsubscribe
+```
+
+Prefer standardized `List-Unsubscribe` / one-click mechanisms when available.
+
+Only use Playwright as a fallback when necessary.
+
+For Playwright:
+
+```text
+Unsubscribe URL
+       ↓
+Open controlled browser
+       ↓
+Detect unsubscribe/preferences page
+       ↓
+Attempt unsubscribe
+       ↓
+Report result
+```
+
+IMPORTANT:
+
+* Never silently unsubscribe users.
+* Require explicit user confirmation.
+* Do not attempt to bypass CAPTCHA.
+* Do not bypass authentication.
+* Do not perform arbitrary website actions.
+* If automation is uncertain, mark it as `MANUAL` or `FAILED` and ask the user to handle it.
+* Keep this functionality behind a feature flag initially.
+
+---
+
+# 13. Privacy
+
+This is important.
+
+The product should be designed around:
+
+**"We don't store your emails."**
+
+Database should contain metadata such as:
+
+```text
+gmail_message_id
+gmail_thread_id
+sender/domain
+category
+confidence
+timestamps
+aggregate counts
+```
+
+but NOT:
+
+```text
+email body
+email HTML
+attachments
+full email content
+```
+
+Email content should exist only temporarily in backend memory while classification is happening.
+
+Add a privacy section to the UI explaining this clearly.
+
+---
+
+# 14. Error Handling
+
+Handle:
+
+* OAuth failures
+* expired credentials
+* Gmail API rate limits
+* Gmail API pagination
+* TypeSafe API errors
+* TypeSafe rate limits
+* failed classifications
+* malformed classifier responses
+* Gmail label creation failures
+* duplicate labels
+* Playwright failures
+
+A failure on one email must not stop the entire scan.
+
+---
+
+# 15. Security
+
+Implement basic production-quality security:
+
+* OAuth tokens/secrets only on backend
+* Environment variables for secrets
+* Never log email bodies
+* Never log OAuth tokens
+* Validate all API responses
+* Validate user ownership of database records
+* Protect backend endpoints
+* Use secure session handling
+* Add reasonable rate limiting where appropriate
+
+---
+
+# 16. Project Structure
+
+Prefer something similar to:
+
+```text
+/
+├── frontend/
+│   ├── src/
+│   │   ├── components/
+│   │   ├── pages/
+│   │   ├── services/
+│   │   └── ...
+│
+├── backend/
+│   ├── app/
+│   │   ├── main.py
+│   │   ├── api/
+│   │   ├── models/
+│   │   ├── schemas/
+│   │   ├── services/
+│   │   │   ├── gmail_service.py
+│   │   │   ├── classifier_service.py
+│   │   │   ├── label_service.py
+│   │   │   └── unsubscribe_service.py
+│   │   ├── workers/
+│   │   └── config.py
+│   ├── requirements.txt
+│   └── ...
+│
+├── README.md
+└── .env.example
+```
+
+You may adjust the structure if there is a better idiomatic FastAPI structure.
+
+---
+
+# 17. MVP Priority
+
+Do NOT try to perfect every feature immediately.
+
+Build in this order:
+
+### Phase 1
+
+```text
+Google OAuth
+    ↓
+Gmail connection
+    ↓
+Fetch emails
+    ↓
+TypeSafe classification
+    ↓
+PostgreSQL metadata
+    ↓
+Dashboard
+```
+
+### Phase 2
+
+```text
+Classification review
+    ↓
+Create Gmail labels
+    ↓
+Apply labels
+```
+
+### Phase 3
+
+```text
+Sender statistics
+    ↓
+Newsletter detection
+    ↓
+List-Unsubscribe
+```
+
+### Phase 4
+
+```text
+Playwright unsubscribe fallback
+```
+
+Build Phase 1 and Phase 2 fully before spending significant effort on Phase 3/4.
+
+---
+
+# 18. Important Development Requirement
+
+Before writing a large amount of code:
+
+1. Inspect the repository.
+2. Create a clear implementation plan.
+3. Set up the frontend and backend.
+4. Set up PostgreSQL.
+5. Implement OAuth.
+6. Verify Gmail API access.
+7. Implement one-email classification with TypeSafe.
+8. Then implement batch processing.
+9. Then implement Gmail labels.
+10. Then improve the UI.
+
+Keep the code readable and modular.
+
+Do not generate fake Gmail data once the real API is configured unless creating an explicit development/mock mode.
+
+The application should be runnable from Replit with clear setup instructions.
+
+At the end, provide:
+
+* setup instructions
+* required environment variables
+* Google Cloud OAuth setup instructions
+* TypeSafe API configuration
+* PostgreSQL setup
+* how to run frontend/backend
+* known limitations
+* next steps
+
+**Start building the application now.**

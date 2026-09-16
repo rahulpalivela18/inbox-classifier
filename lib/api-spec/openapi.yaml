@@ -3,13 +3,23 @@ info:
   # Do not change the title, if the title changes, the import paths will be broken
   title: Api
   version: 0.1.0
-  description: API specification
+  description: Privacy-conscious Gmail organization and AI classification API
 servers:
   - url: /api
     description: Base API path
 tags:
   - name: health
     description: Health operations
+  - name: account
+    description: Gmail connection operations
+  - name: dashboard
+    description: Inbox overview and aggregate statistics
+  - name: scans
+    description: Background inbox scan operations
+  - name: classifications
+    description: Review and edit AI classifications
+  - name: labels
+    description: Gmail label operations
 paths:
   /healthz:
     get:
@@ -24,7 +34,195 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/HealthStatus"
+  /account:
+    get:
+      operationId: getAccount
+      tags: [account]
+      summary: Get the current Gmail connection
+      responses:
+        "200":
+          description: Current account connection
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Account"
+  /account/connect:
+    get:
+      operationId: startGoogleConnection
+      tags: [account]
+      summary: Start Google OAuth connection
+      responses:
+        "302":
+          description: Redirects to Google OAuth
+  /account/disconnect:
+    post:
+      operationId: disconnectGoogleAccount
+      tags: [account]
+      summary: Disconnect Gmail without deleting stored aggregate metadata
+      responses:
+        "200":
+          description: Disconnected account
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Account"
+  /dashboard:
+    get:
+      operationId: getDashboard
+      tags: [dashboard]
+      summary: Get inbox overview and category aggregates
+      responses:
+        "200":
+          description: Dashboard overview
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Dashboard"
+  /categories:
+    get:
+      operationId: listCategories
+      tags: [dashboard]
+      summary: List configured inbox categories
+      responses:
+        "200":
+          description: Configured categories
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Category"
+  /scans:
+    post:
+      operationId: createScan
+      tags: [scans]
+      summary: Create a background inbox scan
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ScanInput"
+      responses:
+        "202":
+          description: Scan queued
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ScanJob"
+    get:
+      operationId: listScans
+      tags: [scans]
+      summary: List recent scan jobs
+      responses:
+        "200":
+          description: Recent scans
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/ScanJob"
+  /scans/{scanId}:
+    get:
+      operationId: getScan
+      tags: [scans]
+      summary: Get scan progress
+      parameters:
+        - $ref: "#/components/parameters/ScanId"
+      responses:
+        "200":
+          description: Scan progress
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ScanJob"
+        "404":
+          description: Scan not found
+  /classifications:
+    get:
+      operationId: listClassifications
+      tags: [classifications]
+      summary: List classifications for review
+      parameters:
+        - in: query
+          name: category
+          schema:
+            type: string
+        - in: query
+          name: sender
+          schema:
+            type: string
+        - in: query
+          name: limit
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 100
+            default: 50
+      responses:
+        "200":
+          description: Classification rows
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Classification"
+  /classifications/{classificationId}:
+    patch:
+      operationId: updateClassification
+      tags: [classifications]
+      summary: Change a classification before applying labels
+      parameters:
+        - $ref: "#/components/parameters/ClassificationId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ClassificationUpdate"
+      responses:
+        "200":
+          description: Updated classification
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Classification"
+        "404":
+          description: Classification not found
+  /labels/apply:
+    post:
+      operationId: applyLabels
+      tags: [labels]
+      summary: Apply reviewed classifications to Gmail labels
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/LabelApplyInput"
+      responses:
+        "202":
+          description: Label operation queued
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/LabelApplyResult"
 components:
+  parameters:
+    ScanId:
+      in: path
+      name: scanId
+      required: true
+      schema:
+        type: string
+    ClassificationId:
+      in: path
+      name: classificationId
+      required: true
+      schema:
+        type: string
   schemas:
     HealthStatus:
       type: object
@@ -33,4 +231,162 @@ components:
           type: string
       required:
         - status
+    Account:
+      type: object
+      required: [connected, email, mode]
+      properties:
+        connected:
+          type: boolean
+        email:
+          type: ["string", "null"]
+        mode:
+          type: string
+          enum: [live, demo, disconnected]
+        lastSyncedAt:
+          type: ["string", "null"]
+    Category:
+      type: object
+      required: [id, name, count, color]
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+        count:
+          type: integer
+          minimum: 0
+        color:
+          type: string
+        share:
+          type: number
+          minimum: 0
+          maximum: 1
+    Dashboard:
+      type: object
+      required: [account, totalEmails, unreadEmails, recurringSenders, categories, lastScan, labelsApplied]
+      properties:
+        account:
+          $ref: "#/components/schemas/Account"
+        totalEmails:
+          type: integer
+          minimum: 0
+        unreadEmails:
+          type: integer
+          minimum: 0
+        recurringSenders:
+          type: integer
+          minimum: 0
+        categories:
+          type: array
+          items:
+            $ref: "#/components/schemas/Category"
+        lastScan:
+          type: ["string", "null"]
+        labelsApplied:
+          type: integer
+          minimum: 0
+        privacyNote:
+          type: string
+    ScanInput:
+      type: object
+      properties:
+        scope:
+          type: string
+          enum: [inbox, unread, recent]
+          default: inbox
+        maxMessages:
+          type: integer
+          minimum: 1
+          maximum: 10000
+          default: 5000
+    ScanJob:
+      type: object
+      required: [id, status, totalMessages, processedMessages, failedMessages, progress, currentStep]
+      properties:
+        id:
+          type: string
+        status:
+          type: string
+          enum: [queued, running, completed, failed]
+        totalMessages:
+          type: integer
+          minimum: 0
+        processedMessages:
+          type: integer
+          minimum: 0
+        failedMessages:
+          type: integer
+          minimum: 0
+        progress:
+          type: integer
+          minimum: 0
+          maximum: 100
+        currentStep:
+          type: string
+        startedAt:
+          type: ["string", "null"]
+        completedAt:
+          type: ["string", "null"]
+    Classification:
+      type: object
+      required: [id, gmailMessageId, senderEmail, senderDomain, subjectPreview, category, confidence, classifiedAt, included]
+      properties:
+        id:
+          type: string
+        gmailMessageId:
+          type: string
+        gmailThreadId:
+          type: string
+        senderEmail:
+          type: string
+        senderDomain:
+          type: string
+        subjectPreview:
+          type: string
+        category:
+          type: string
+        subcategory:
+          type: ["string", "null"]
+        confidence:
+          type: number
+          minimum: 0
+          maximum: 1
+        classifiedAt:
+          type: string
+        included:
+          type: boolean
+    ClassificationUpdate:
+      type: object
+      properties:
+        category:
+          type: string
+        included:
+          type: boolean
+    LabelApplyInput:
+      type: object
+      required: [classificationIds]
+      properties:
+        classificationIds:
+          type: array
+          items:
+            type: string
+          minItems: 1
+    LabelApplyResult:
+      type: object
+      required: [status, labelsCreated, messagesLabeled, failedMessages]
+      properties:
+        status:
+          type: string
+          enum: [queued, completed, failed]
+        labelsCreated:
+          type: integer
+          minimum: 0
+        messagesLabeled:
+          type: integer
+          minimum: 0
+        failedMessages:
+          type: integer
+          minimum: 0
+        message:
+          type: string
 
