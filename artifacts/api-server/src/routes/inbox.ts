@@ -1,4 +1,5 @@
 import { Router, type IRouter } from "express";
+import { logger } from "../lib/logger";
 import {
   ApplyLabelsBody,
   ApplyLabelsResponse,
@@ -28,6 +29,13 @@ import {
   listClassifications,
   listScans,
 } from "../lib/inbox-state";
+import {
+  clearLiveSession,
+  exchangeCodeForTokens,
+  fetchGmailProfile,
+  OAuthExchangeError,
+  storeLiveSession,
+} from "../lib/google-auth";
 
 const router: IRouter = Router();
 
@@ -63,7 +71,46 @@ router.get("/account/connect", (req, res) => {
   );
 });
 
+router.get("/account/callback", async (req, res) => {
+  const error = req.query.error;
+  if (typeof error === "string") {
+    res.status(400).json({ error });
+    return;
+  }
+  const code = req.query.code;
+  if (typeof code !== "string" || code.length === 0) {
+    res.status(400).json({ error: "Missing authorization code" });
+    return;
+  }
+  try {
+    const tokens = await exchangeCodeForTokens(code);
+    const profile = await fetchGmailProfile(tokens.accessToken);
+    storeLiveSession(profile.email, tokens);
+    // Login finishes in a browser tab, so answer with a redirect back to
+    // the app (settings shows the now-live account) instead of JSON.
+    const appUrl = (process.env.APP_URL ?? "http://localhost:5173").replace(
+      /\/+$/,
+      "",
+    );
+    res.redirect(302, `${appUrl}/settings`);
+  } catch (err) {
+    if (err instanceof OAuthExchangeError) {
+      res.status(400).json({ error: err.message, code: err.code });
+      return;
+    }
+    // Log the stage that failed (message only — tokens never reach logs).
+    logger.error(
+      { signInError: err instanceof Error ? err.message : String(err) },
+      "Google sign-in failed",
+    );
+    res
+      .status(502)
+      .json({ error: "Google sign-in failed. Please try again." });
+  }
+});
+
 router.post("/account/disconnect", (_req, res) => {
+  clearLiveSession();
   res.json(
     DisconnectGoogleAccountResponse.parse({
       connected: false,

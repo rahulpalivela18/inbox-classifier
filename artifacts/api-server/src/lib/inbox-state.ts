@@ -7,6 +7,7 @@ import {
   scanJobsTable,
   usersTable,
 } from "@workspace/db";
+import { getLiveSession } from "./google-auth";
 
 export const DEFAULT_CATEGORIES = [
   { id: "work", name: "Work", color: "#5F6FFF" },
@@ -53,7 +54,6 @@ export type ClassificationState = {
 
 const DEMO_USER_ID = "demo-user";
 const DEMO_EMAIL = "alex@northstar.studio";
-const DEMO_LAST_SCAN = "2026-09-16T08:12:00.000Z";
 
 const DEMO_CLASSIFICATIONS = [
   {
@@ -228,12 +228,24 @@ export function isDemoMode(): boolean {
 }
 
 export function getAccount() {
-  if (isDemoMode()) {
+  const live = getLiveSession();
+  if (live) {
     return {
       connected: true,
-      email: DEMO_EMAIL,
+      email: live.email,
+      mode: "live" as const,
+      lastSyncedAt: null,
+    };
+  }
+  // No live session means no connection — in demo mode the app still serves
+  // sample content, but the account must never impersonate a fake identity.
+  // (Previously this returned a hardcoded demo user as "connected".)
+  if (isDemoMode()) {
+    return {
+      connected: false,
+      email: null,
       mode: "demo" as const,
-      lastSyncedAt: DEMO_LAST_SCAN,
+      lastSyncedAt: null,
     };
   }
 
