@@ -33,6 +33,7 @@ export const emailClassificationsTable = pgTable("email_classifications", {
   gmailThreadId: text("gmail_thread_id").notNull(),
   senderEmail: text("sender_email").notNull(),
   senderDomain: text("sender_domain").notNull(),
+  subjectPreview: text("subject_preview"),
   category: text("category").notNull(),
   subcategory: text("subcategory"),
   confidence: real("confidence").notNull(),

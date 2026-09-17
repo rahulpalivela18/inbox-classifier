@@ -1,5 +1,11 @@
+import "./lib/env";
 import app from "./app";
 import { logger } from "./lib/logger";
+
+logger.info(
+  { dbConfigured: Boolean(process.env.DATABASE_URL) },
+  "Environment loaded",
+);
 
 const rawPort = process.env["PORT"];
 

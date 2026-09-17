@@ -20,12 +20,13 @@ import {
 import {
   applyClassificationUpdate,
   applyLabels,
-  categories,
-  classifications,
   createScan,
   getAccount,
   getDashboard,
-  scans,
+  getScan,
+  listCategories,
+  listClassifications,
+  listScans,
 } from "../lib/inbox-state";
 
 const router: IRouter = Router();
@@ -73,36 +74,36 @@ router.post("/account/disconnect", (_req, res) => {
   );
 });
 
-router.get("/dashboard", (_req, res) => {
-  res.json(GetDashboardResponse.parse(getDashboard()));
+router.get("/dashboard", async (_req, res) => {
+  res.json(GetDashboardResponse.parse(await getDashboard()));
 });
 
-router.get("/categories", (_req, res) => {
-  res.json(ListCategoriesResponse.parse(categories));
+router.get("/categories", async (_req, res) => {
+  res.json(ListCategoriesResponse.parse(await listCategories()));
 });
 
-router.post("/scans", (req, res) => {
+router.post("/scans", async (req, res) => {
   const parsed = CreateScanBody.safeParse(req.body ?? {});
   if (!parsed.success) {
     res.status(400).json({ error: parsed.error.message });
     return;
   }
 
-  const scan = createScan(parsed.data.maxMessages);
+  const scan = await createScan(parsed.data.maxMessages);
   res.status(202).json(CreateScanResponse.parse(scan));
 });
 
-router.get("/scans", (_req, res) => {
-  res.json(ListScansResponse.parse(Array.from(scans.values()).reverse()));
+router.get("/scans", async (_req, res) => {
+  res.json(ListScansResponse.parse(await listScans()));
 });
 
-router.get("/scans/:scanId", (req, res) => {
+router.get("/scans/:scanId", async (req, res) => {
   const parsed = GetScanParams.safeParse(req.params);
   if (!parsed.success) {
     res.status(400).json({ error: parsed.error.message });
     return;
   }
-  const scan = scans.get(parsed.data.scanId);
+  const scan = await getScan(parsed.data.scanId);
   if (!scan) {
     res.status(404).json({ error: "Scan not found" });
     return;
@@ -110,32 +111,23 @@ router.get("/scans/:scanId", (req, res) => {
   res.json(GetScanResponse.parse(scan));
 });
 
-router.get("/classifications", (req, res) => {
+router.get("/classifications", async (req, res) => {
   const parsed = ListClassificationsQueryParams.safeParse(req.query);
   if (!parsed.success) {
     res.status(400).json({ error: parsed.error.message });
     return;
   }
 
-  const filtered = classifications
-    .filter((item) =>
-      parsed.data.category
-        ? item.category.toLowerCase() === parsed.data.category.toLowerCase()
-        : true,
-    )
-    .filter((item) =>
-      parsed.data.sender
-        ? item.senderDomain
-            .toLowerCase()
-            .includes(parsed.data.sender.toLowerCase())
-        : true,
-    )
-    .slice(0, parsed.data.limit);
+  const filtered = await listClassifications({
+    category: parsed.data.category,
+    sender: parsed.data.sender,
+    limit: parsed.data.limit,
+  });
 
   res.json(ListClassificationsResponse.parse(filtered));
 });
 
-router.patch("/classifications/:classificationId", (req, res) => {
+router.patch("/classifications/:classificationId", async (req, res) => {
   const params = UpdateClassificationParams.safeParse(req.params);
   if (!params.success) {
     res.status(400).json({ error: params.error.message });
@@ -146,7 +138,7 @@ router.patch("/classifications/:classificationId", (req, res) => {
     res.status(400).json({ error: body.error.message });
     return;
   }
-  const updated = applyClassificationUpdate(
+  const updated = await applyClassificationUpdate(
     params.data.classificationId,
     body.data,
   );
@@ -157,14 +149,14 @@ router.patch("/classifications/:classificationId", (req, res) => {
   res.json(UpdateClassificationResponse.parse(updated));
 });
 
-router.post("/labels/apply", (req, res) => {
+router.post("/labels/apply", async (req, res) => {
   const parsed = ApplyLabelsBody.safeParse(req.body);
   if (!parsed.success) {
     res.status(400).json({ error: parsed.error.message });
     return;
   }
   res.status(202).json(
-    ApplyLabelsResponse.parse(applyLabels(parsed.data.classificationIds)),
+    ApplyLabelsResponse.parse(await applyLabels(parsed.data.classificationIds)),
   );
 });
 
