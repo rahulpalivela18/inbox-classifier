@@ -65,21 +65,39 @@ working.
 
 ## Run locally
 
-1. Copy `.env.example` to `.env` and set `DATABASE_URL`.
-2. Keep `INBOX_CLASSIFIER_DEMO_MODE=true` for the local preview.
-3. Start the API:
+Prerequisites: Node 22+, Docker.
+
+1. Install dependencies:
 
    ```bash
-   npm run dev --workspace @workspace/api-server
+   npm install
    ```
 
-4. Start the web app in a second process:
+2. Copy `.env.example` to `.env`. Database values already match
+   `compose.yaml`, so no edits needed until you add Google OAuth below.
+3. Start Postgres and push the schema — one command:
 
    ```bash
-   npm run dev --workspace @workspace/inbox-classifier
+   npm run db:setup
    ```
 
-Run `npm run typecheck` for the full workspace check.
+   (`npm run db:up` / `npm run db:down` start and stop the database;
+   data persists in the `inbox_pgdata` volume.)
+4. Keep `INBOX_CLASSIFIER_DEMO_MODE=true` for the local preview.
+5. Start the API (needs `PORT` — 5000 is usually taken by macOS AirPlay):
+
+   ```bash
+   PORT=5001 npm run dev --workspace @workspace/api-server
+   ```
+
+6. Start the web app in a second process:
+
+   ```bash
+   PORT=5173 npm run dev --workspace @workspace/inbox-classifier
+   ```
+
+Open `http://localhost:5173`. Run `npm run typecheck` for the full
+workspace check.
 
 ## Google Cloud OAuth setup for Phase 1
 

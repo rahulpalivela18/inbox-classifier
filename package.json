@@ -11,7 +11,10 @@
   "scripts": {
     "build": "npm run typecheck && npm run build --workspaces --if-present",
     "typecheck:libs": "tsc --build",
-    "typecheck": "npm run typecheck:libs && npm run typecheck --workspaces --if-present"
+    "typecheck": "npm run typecheck:libs && npm run typecheck --workspaces --if-present",
+    "db:up": "docker compose up -d",
+    "db:down": "docker compose down",
+    "db:setup": "test -f .env || (echo 'Missing .env — copy it first: cp .env.example .env' && exit 1); docker compose up -d && until docker compose exec -T db pg_isready -U postgres -q; do sleep 1; done; set -a; . ./.env; set +a; npm run push --workspace @workspace/db"
   },
   "overrides": {
     "esbuild": "0.28.2",

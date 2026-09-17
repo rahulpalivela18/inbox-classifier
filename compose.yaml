@@ -1,0 +1,32 @@
+# Local development database.
+#
+#   npm run db:setup   # everything: start Postgres, wait, push schema
+#   npm run db:up      # start Postgres only  (== docker compose up -d)
+#   npm run db:down    # stop it (data stays in the inbox_pgdata volume)
+#
+# First-time clone flow: npm install -> cp .env.example .env ->
+# npm run db:setup -> start the API + web app (see README).
+
+name: inbox-classifier
+
+services:
+  db:
+    image: postgres:16-alpine
+    container_name: inbox-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_PASSWORD: devpassword # local dev only — never reuse elsewhere
+      POSTGRES_DB: inbox_classifier
+    ports:
+      - "5434:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d inbox_classifier"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
+volumes:
+  pgdata:
+    name: inbox_pgdata
