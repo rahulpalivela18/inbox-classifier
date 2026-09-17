@@ -8,6 +8,7 @@ import {
   usersTable,
 } from "@workspace/db";
 import { getLiveSession } from "./google-auth";
+import { listInboxMetadata } from "./gmail";
 
 export const DEFAULT_CATEGORIES = [
   { id: "work", name: "Work", color: "#5F6FFF" },
@@ -391,6 +392,72 @@ export async function getScan(scanId: string): Promise<ScanJobState | null> {
 
 function escapeLike(value: string): string {
   return value.replace(/[%_\\]/g, (char) => `\\${char}`);
+}
+
+function parseSender(from: string | null): { email: string; domain: string } {
+  const raw = from?.trim() ?? "";
+  const bracket = raw.match(/<([^<>\s]+@[^<>\s]+)>/);
+  const email = (bracket?.[1] ?? raw).trim() || "unknown";
+  const domain = (email.split("@")[1] ?? "unknown").toLowerCase();
+  return { email, domain };
+}
+
+// Import recent Gmail metadata as review rows. No AI involved: imports land
+// as Other/Unclassified with confidence 0, ready for manual triage now and
+// real classification later. Already-stored message IDs are skipped.
+export async function importGmail(accessToken: string, max: number) {
+  await ensureSeeded();
+  const items = await listInboxMetadata(accessToken, max);
+  const stored = await db
+    .select({ gmailMessageId: emailClassificationsTable.gmailMessageId })
+    .from(emailClassificationsTable)
+    .where(eq(emailClassificationsTable.userId, DEMO_USER_ID));
+  const known = new Set(stored.map((row) => row.gmailMessageId));
+  const fresh = items.filter((item) => !known.has(item.id));
+  const seenAt = new Date();
+  if (fresh.length > 0) {
+    await db.insert(emailClassificationsTable).values(
+      fresh.map((item) => {
+        const sender = parseSender(item.from);
+        return {
+          id: randomUUID(),
+          userId: DEMO_USER_ID,
+          gmailMessageId: item.id,
+          gmailThreadId: item.threadId || item.id,
+          senderEmail: sender.email,
+          senderDomain: sender.domain,
+          subjectPreview: item.subject,
+          category: "Other",
+          subcategory: "Unclassified",
+          confidence: 0,
+          included: true,
+          classifiedAt: new Date(),
+          lastSeenAt: seenAt,
+        };
+      }),
+    );
+  }
+  // Touch every observed ID so staleness is measurable: rows whose
+  // lastSeenAt lags far behind are gone-or-moved in Gmail.
+  if (items.length > 0) {
+    await db
+      .update(emailClassificationsTable)
+      .set({ lastSeenAt: seenAt })
+      .where(
+        and(
+          eq(emailClassificationsTable.userId, DEMO_USER_ID),
+          inArray(
+            emailClassificationsTable.gmailMessageId,
+            items.map((item) => item.id),
+          ),
+        ),
+      );
+  }
+  return {
+    imported: fresh.length,
+    skipped: items.length - fresh.length,
+    total: items.length,
+  };
 }
 
 export async function listClassifications(filters: {

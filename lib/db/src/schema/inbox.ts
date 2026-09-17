@@ -39,6 +39,10 @@ export const emailClassificationsTable = pgTable("email_classifications", {
   confidence: real("confidence").notNull(),
   included: boolean("included").notNull().default(true),
   classifiedAt: timestamp("classified_at", { withTimezone: true }).notNull().defaultNow(),
+  // Last import/sync that observed this message still present in Gmail.
+  // Rows unseen for a long time are candidates for archive/hide — never
+  // hard-deleted, since manual categories are user work worth keeping.
+  lastSeenAt: timestamp("last_seen_at", { withTimezone: true }),
 });
 
 export const scanJobsTable = pgTable("scan_jobs", {

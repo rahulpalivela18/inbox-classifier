@@ -25,6 +25,7 @@ import {
   getAccount,
   getDashboard,
   getScan,
+  importGmail,
   listCategories,
   listClassifications,
   listScans,
@@ -33,9 +34,11 @@ import {
   clearLiveSession,
   exchangeCodeForTokens,
   fetchGmailProfile,
+  getLiveSession,
   OAuthExchangeError,
   storeLiveSession,
 } from "../lib/google-auth";
+import { listInboxMetadata } from "../lib/gmail";
 
 const router: IRouter = Router();
 
@@ -106,6 +109,52 @@ router.get("/account/callback", async (req, res) => {
     res
       .status(502)
       .json({ error: "Google sign-in failed. Please try again." });
+  }
+});
+
+// Scaffolding endpoint for Gmail read testing (not in the public API
+// contract yet). Requires a live Google session; returns minimal metadata
+// only — never bodies. Classification and storage come later.
+router.get("/gmail/messages", async (req, res) => {
+  const session = getLiveSession();
+  if (!session) {
+    res.status(401).json({ error: "Sign in with Google first." });
+    return;
+  }
+  const rawMax = Array.isArray(req.query.max)
+    ? req.query.max[0]
+    : req.query.max;
+  const max = Math.min(Math.max(Number(rawMax ?? 100) || 100, 1), 5000);
+  try {
+    res.json(await listInboxMetadata(session.tokens.accessToken, max));
+  } catch (err) {
+    if (err instanceof Error && err.name === "GmailTokenExpiredError") {
+      res.status(401).json({ error: err.message });
+      return;
+    }
+    res.status(502).json({ error: "Gmail read failed. Please try again." });
+  }
+});
+
+// Scaffolding endpoint: import recent Gmail metadata as unclassified
+// review rows (Other/Unclassified, confidence 0). Requires a live session.
+// Deduplicates by Gmail message ID — re-importing is safe.
+router.post("/gmail/import", async (req, res) => {
+  const session = getLiveSession();
+  if (!session) {
+    res.status(401).json({ error: "Sign in with Google first." });
+    return;
+  }
+  const body = (req.body ?? {}) as { max?: unknown };
+  const max = Math.min(Math.max(Number(body.max ?? 100) || 100, 1), 5000);
+  try {
+    res.json(await importGmail(session.tokens.accessToken, max));
+  } catch (err) {
+    if (err instanceof Error && err.name === "GmailTokenExpiredError") {
+      res.status(401).json({ error: err.message });
+      return;
+    }
+    res.status(502).json({ error: "Gmail import failed. Please try again." });
   }
 });
 

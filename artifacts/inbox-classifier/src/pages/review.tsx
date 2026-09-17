@@ -32,13 +32,41 @@ export default function ReviewPage() {
     );
   };
   const changeCategory = (id: string, value: string) => update.mutate({ classificationId: id, data: { category: value } }, { onSuccess: patchRow });
-  const excludeSender = (domain: string) => {
-    (query.data ?? []).filter((item) => item.senderDomain === domain && item.included).forEach((item) => update.mutate({ classificationId: item.id, data: { included: false } }, { onSuccess: patchRow }));
+  const isSenderExcluded = (domain: string) => {
+    const domainRows = (query.data ?? []).filter((item) => item.senderDomain === domain);
+    return domainRows.length > 0 && domainRows.every((item) => !item.included);
+  };
+  const toggleSender = (domain: string) => {
+    const domainRows = (query.data ?? []).filter((item) => item.senderDomain === domain);
+    const anyIncluded = domainRows.some((item) => item.included);
+    // Exclude when anything is included; re-include the whole sender otherwise.
+    domainRows.filter((item) => item.included === anyIncluded).forEach((item) => update.mutate({ classificationId: item.id, data: { included: !anyIncluded } }, { onSuccess: patchRow }));
   };
   const applyLabels = () => apply.mutate({ data: { classificationIds: selected.length ? selected : includedRows.map((item) => item.id) } }, { onSuccess: () => setSelected([]) });
+  const [importing, setImporting] = useState(false);
+  const [importResult, setImportResult] = useState<{ imported: number; skipped: number } | null>(null);
+  const [importError, setImportError] = useState<string | null>(null);
+  const importFromGmail = async () => {
+    setImporting(true);
+    setImportError(null);
+    try {
+      const res = await fetch('/api/gmail/import', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ max: 500 }) });
+      if (res.status === 401) throw new Error('Sign in with Google first (Settings → Connect Gmail).');
+      if (!res.ok) throw new Error('Gmail import failed. Please try again.');
+      const data = await res.json();
+      setImportResult({ imported: data.imported ?? 0, skipped: data.skipped ?? 0 });
+      await queryClient.invalidateQueries({ queryKey: getListClassificationsQueryKey(params) });
+    } catch (err) {
+      setImportError(err instanceof Error ? err.message : 'Gmail import failed.');
+    } finally {
+      setImporting(false);
+    }
+  };
 
   return <AppShell><div className="mx-auto max-w-[1240px] animate-enter">
-    <div className="mb-8 flex flex-col justify-between gap-5 lg:flex-row lg:items-end"><div><SectionKicker>Control room / review</SectionKicker><h1 className="text-3xl font-semibold tracking-[-0.055em] sm:text-[40px]">Make the call, then move on.</h1><p className="mt-3 max-w-xl text-sm leading-relaxed text-muted-foreground">A quick pass over classifications before they become Gmail labels. Change one, exclude a sender, or trust the batch.</p></div><button type="button" onClick={applyLabels} disabled={apply.isPending || includedRows.length === 0} data-testid="button-apply-labels" className="inline-flex h-11 items-center justify-center gap-2 rounded-lg bg-primary px-4 text-sm font-semibold text-primary-foreground shadow-[0_8px_18px_hsl(var(--primary)/.18)] transition-transform hover:-translate-y-0.5 disabled:opacity-45"><Tag className="h-4 w-4" />{apply.isPending ? 'Applying…' : `Apply labels${selected.length ? ` (${selected.length})` : ''}`}</button></div>
+    <div className="mb-8 flex flex-col justify-between gap-5 lg:flex-row lg:items-end"><div><SectionKicker>Control room / review</SectionKicker><h1 className="text-3xl font-semibold tracking-[-0.055em] sm:text-[40px]">Make the call, then move on.</h1><p className="mt-3 max-w-xl text-sm leading-relaxed text-muted-foreground">A quick pass over classifications before they become Gmail labels. Change one, exclude a sender, or trust the batch.</p></div><div className="flex flex-wrap gap-2"><button type="button" onClick={importFromGmail} disabled={importing} data-testid="button-import-gmail" className="inline-flex h-11 items-center justify-center gap-2 rounded-lg border border-border bg-background px-4 text-sm font-semibold text-foreground transition-transform hover:-translate-y-0.5 disabled:opacity-45"><RefreshCw className={`h-4 w-4 ${importing ? 'animate-spin' : ''}`} />{importing ? 'Importing…' : 'Import from Gmail'}</button><button type="button" onClick={applyLabels} disabled={apply.isPending || includedRows.length === 0} data-testid="button-apply-labels" className="inline-flex h-11 items-center justify-center gap-2 rounded-lg bg-primary px-4 text-sm font-semibold text-primary-foreground shadow-[0_8px_18px_hsl(var(--primary)/.18)] transition-transform hover:-translate-y-0.5 disabled:opacity-45"><Tag className="h-4 w-4" />{apply.isPending ? 'Applying…' : `Apply labels${selected.length ? ` (${selected.length})` : ''}`}</button></div></div>
+    {importResult && <div className="mb-5 flex items-center gap-3 rounded-lg border border-[#5C9B7B]/30 bg-[#E6F0EC] px-4 py-3 text-sm text-[#35654E]" data-testid="status-gmail-import"><Check className="h-4 w-4" />Imported {importResult.imported} from Gmail{importResult.skipped ? ` · ${importResult.skipped} already here` : ''} — unclassified, ready for your call.</div>}
+    {importError && <div className="mb-5 rounded-xl border border-destructive/25 bg-destructive/5 p-4 text-sm font-semibold text-destructive" data-testid="state-import-error">{importError}</div>}
     {apply.data && <div className="mb-5 flex items-center gap-3 rounded-lg border border-[#5C9B7B]/30 bg-[#E6F0EC] px-4 py-3 text-sm text-[#35654E]" data-testid="status-label-apply"><Check className="h-4 w-4" />{apply.data.message ?? `${apply.data.messagesLabeled} messages are now labeled.`}</div>}
     {query.isError && <div className="rounded-xl border border-destructive/25 bg-destructive/5 p-5" data-testid="state-review-error"><p className="text-sm font-semibold text-destructive">The review queue is unavailable.</p><button type="button" onClick={() => query.refetch()} data-testid="button-retry-review" className="mt-3 rounded-md border border-border bg-card px-3 py-2 text-xs font-semibold">Retry</button></div>}
     <section className="overflow-hidden rounded-xl border border-border bg-card shadow-[0_12px_30px_hsl(var(--foreground)/.035)]">
@@ -50,7 +78,7 @@ export default function ReviewPage() {
         {rows.map((row) => <div key={row.id} className={`group grid gap-3 px-4 py-4 transition-colors hover:bg-muted/35 sm:grid-cols-[auto_1fr_auto] sm:items-center sm:px-5 ${!row.included ? 'opacity-45' : ''}`} data-testid={`row-classification-${row.id}`}>
           <button type="button" aria-label={selected.includes(row.id) ? 'Deselect message' : 'Select message'} onClick={() => toggleSelected(row.id)} disabled={!row.included} data-testid={`button-select-${row.id}`} className={`flex h-5 w-5 items-center justify-center rounded border transition-colors ${selected.includes(row.id) ? 'border-primary bg-primary text-primary-foreground' : 'border-input bg-background'}`}>{selected.includes(row.id) && <Check className="h-3 w-3" />}</button>
           <div className="min-w-0"><div className="flex min-w-0 flex-wrap items-center gap-2"><span className="truncate text-sm font-semibold">{row.senderEmail}</span><span className="rounded-full bg-muted px-2 py-0.5 font-mono text-[10px] text-muted-foreground">{row.senderDomain}</span><span className="hidden rounded-full px-2 py-0.5 text-[10px] font-medium sm:inline" style={{ color: categoryColor(row.category), backgroundColor: `${categoryColor(row.category)}18` }}>{confidenceLabel(row.confidence)}</span></div><p className="mt-1 truncate text-sm text-muted-foreground">{row.subjectPreview}</p><p className="mt-1 text-[11px] text-muted-foreground/65">{row.subcategory ?? 'General'} · {Math.round(row.confidence * 100)}% confidence</p></div>
-          <div className="flex items-center gap-2 sm:justify-end"><select value={row.category} onChange={(event) => changeCategory(row.id, event.target.value)} disabled={update.isPending} data-testid={`select-category-${row.id}`} className="h-9 max-w-[130px] rounded-md border border-input bg-background px-2 text-xs font-medium outline-none focus:ring-2 focus:ring-primary/20">{Array.from(new Set((query.data ?? []).map((item) => item.category))).sort().map((item) => <option key={item} value={item}>{item}</option>)}</select><button type="button" onClick={() => excludeSender(row.senderDomain)} disabled={!row.included || update.isPending} data-testid={`button-exclude-${row.id}`} title="Exclude sender" className="flex h-9 w-9 items-center justify-center rounded-md border border-border text-muted-foreground transition-colors hover:border-destructive/40 hover:bg-destructive/5 hover:text-destructive disabled:opacity-40"><UserRoundX className="h-4 w-4" /></button></div>
+          <div className="flex items-center gap-2 sm:justify-end"><select value={row.category} onChange={(event) => changeCategory(row.id, event.target.value)} disabled={update.isPending} data-testid={`select-category-${row.id}`} className="h-9 max-w-[130px] rounded-md border border-input bg-background px-2 text-xs font-medium outline-none focus:ring-2 focus:ring-primary/20">{Array.from(new Set((query.data ?? []).map((item) => item.category))).sort().map((item) => <option key={item} value={item}>{item}</option>)}</select><button type="button" onClick={() => toggleSender(row.senderDomain)} disabled={update.isPending} data-testid={`button-exclude-${row.id}`} title={isSenderExcluded(row.senderDomain) ? 'Include sender' : 'Exclude sender'} className="flex h-9 w-9 items-center justify-center rounded-md border border-border text-muted-foreground transition-colors hover:border-destructive/40 hover:bg-destructive/5 hover:text-destructive disabled:opacity-40"><UserRoundX className="h-4 w-4" /></button></div>
         </div>)}
       </div>}
     </section>
